@@ -15,11 +15,17 @@ local setColour = love.graphics.setColor
 
 local colours = {
     default = {1, 1, 1},
+
     white = {1, 1, 1},
     black = {0, 0, 0},
+
     red = {1, 0, 0},
     green = {0, 1, 0},
     blue = {0, 0, 1},
+    
+    yellow = {1, 1, 0},
+    orange = {1, 0.5, 0},
+    purple = {0.5, 0, 1}
 }
 
 local waveSettings = {
