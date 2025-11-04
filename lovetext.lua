@@ -1,11 +1,3 @@
---[[-----------------------------------------------------------------------------------------------
-
-<shake> => makes each character wobble.
-<wave> => the text moves in a sine wave.
-<[colour]> => sets text colour. check the colour table for defaults, lovetext.newColourTag() to create new
-
------------------------------------------------------------------------------------------------]]--
-
 local lovetext = {}
 lovetext.__index = lovetext
 local instances = {}
@@ -39,16 +31,16 @@ local shakeSettings = {
 }
 
 local function update(self, dt)
-    local t = love.timer.getTime()
     for i, seg in ipairs(self.parsed) do
+        seg.t = seg.t + dt
 
         for j, tag in ipairs(seg.tags) do
 
             if tag == "shake" then
-                seg.mx = math.sin(t * shakeSettings.speed + i) * shakeSettings.intensity
-                seg.my = math.cos(t * shakeSettings.speed + i) * shakeSettings.intensity
+                seg.mx = math.sin(seg.t * shakeSettings.speed + i) * shakeSettings.intensity
+                seg.my = math.cos(seg.t * shakeSettings.speed + i) * shakeSettings.intensity
             elseif tag == "wave" then
-                seg.my = math.sin(t*waveSettings.speed + i) * waveSettings.amplitude
+                seg.my = math.sin(seg.t*waveSettings.speed + i) * waveSettings.amplitude
             end
 
         end
@@ -62,8 +54,6 @@ local function parseSegment(tags, text, font, colour)
         text = text,
         font = font,
         colour = colour or colours.default,
-        mx = 0,
-        my = 0,
     }
     return seg
 end
@@ -79,8 +69,10 @@ local function explodeSegments(segments)
                 text = char,
                 font = seg.font,
                 colour = seg.colour,
-                mx = seg.mx,
-                my = seg.my,
+
+                t = 0,
+                mx = 0,
+                my = 0,
             })
         end
     end
@@ -196,7 +188,7 @@ function lovetext:draw(x, y, chars)
         end
 
         local w = seg.font:getWidth(seg.text)
-        print(seg.text, cursor.x + seg.mx, cursor.y + seg.my)
+        print(seg.text, seg.font, cursor.x + seg.mx, cursor.y + seg.my)
         setColour(colours.default)
 
         cursor.x = cursor.x + w
