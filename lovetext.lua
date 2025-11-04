@@ -184,6 +184,11 @@ function lovetext:draw(x, y, chars)
         count = count + 1
         if count > chars then break end
 
+        if seg.text == "\n" then
+            cursor.x = x
+            cursor.y = cursor.y + seg.font:getHeight()
+        end
+
         for j, tag in ipairs(seg.tags) do
             if colours[tag] then
                 setColour(colours[tag])
