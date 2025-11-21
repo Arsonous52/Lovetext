@@ -1,11 +1,6 @@
 # What is Lovetext?
 
-This is a lightweight* text engine I've created for Love2D, mainly intended on being used for Lovepotion.
-
-
-I made this as I was disappointed by the lack of text rendering options for the platform, and wanted to change that.
-
-*This project hasn't been fully optimised yet and as such may run poorly on old 3ds models.
+This is a lightweight text engine for Love2D which renders animated and formatted text using inline tags, mainly intended on being used for Lovepotion.
 
 # Example
 
@@ -27,91 +22,189 @@ end
 
 ![til](demonstration.gif)
 
-1. [How To Use](#how-to-use)
-2. [Updating Lovetext Objects](#updating-lovetext-objects)  
-3. [Using Tags](#using-tags)  
-4. [Customisation](#customisation)  
-5. [Cleaning Up](#cleaning-up)
+### 1. [How To Use](#how-to-use)
+### 2. [Updating Lovetext Objects](#updating-lovetext-objects)  
+### 3. [Using Tags](#using-tags)  
+### 4. [Configuration](#configuration)  
+### 5. [Customisation](#customisation)  
+### 6. [Cleaning Up](#cleaning-up)
 
 # How To Use:
 
-The way you can begin using lovetext is very simple!
-
-After importing lovetext through the following:
+After importing Lovetext through the following:
 
 ```lua
 lovetext = require('path/to/lovetext')
 ```
+
 You can immediately begin creating text objects through the following:
 
 ```lua
-text = lovetext.new("your text here", font)
+text = lovetext.new("your text", font, limit)
 ```
 
-If you ever need to send additional text to an existing lovetext object, instead of creating a new object, you can simply use the following function:
+You can send additional text to an existing Lovetext object using the following function:
 
 ```lua
-text:send("additional text here")
+text:send("additional text") -- appends text
+text:send(-4) -- removes last 4 letters
 ```
+> `send()` automatically **re-parses tags** for the inserted text.
 
 Once your text objects are ready, you can render them through:
+
+
 ```lua
 text:draw(x, y, chars)
+text:draw(20, 400, 5) -- renders the first 5 visible characters at {x20, y400}
 ```
-Where `x` and `y` are the location to draw the text object, and `chars` is the number of characters from the text to draw (useful for creating a typewriting effect).
+> This can produce mid-word line breaks (wrapping currently works on a per-letter basis).
 
-## Updating Lovetext Objects
+> Tags are still parsed, even if the content they apply to is partially drawn.
 
-You can update Lovetext objects through the simple function:
+`chars` are useful for:
+
+- typewriter effects
+
+- dynamic dialogue
+
+- gradually revealing or hiding text
+
+# Updating Lovetext Objects
+> [!IMPORTANT]
+> If you don’t call update, text still renders, but all animated effects freeze!
+
+Lovetext uses per-letter timers to drive animations.
+
+Update the timers for all existing text objects using:
+
 ```lua
 lovetext.update(dt)
 ```
-This will update all instances of Lovetext. If you would instead like to only update specific instances, simply call:
+
+You can also update a single object using:
+
 ```lua
 text:update(dt)
 ```
-Which will update only the associated object.
 
-## Using Tags
+Every letter starts with a timer of `t = 0`, and on each update its timer increases by `dt`.
+
+# Using Tags
 
 Lovetext tags are very simple, and have been designed to behave similarly to HTML tags.
 
-For example, to make text shake, you would simply open the tag with `<shake>`, then type the text you would like to shake. When finished, type `</shake>` and all text within the tags will shake- Its that easy!
+To make text shake, you would simply open the tag with `<shake>`, then type the text you would like to shake. When finished, type `</shake>` and all text within the tags will shake.
 
-The currently supported tags include:
+The default tags include:
 
 - Effects: `<shake>` `<wave>`
 
-- Tones: `<default>` `<white>` `<black>`
+- Colours: `<default>` `<white>` `<black>` `<red>` `<orange>` `<yellow>` `<green>` `<blue>` `<purple>`
 
-- Colours: `<red>` `<green>` `<blue>` `<yellow>` `<orange>` `<purple>`
+## Tag Precedence & Stacking Rules
 
-I'm always looking to add more, so if you have any ideas, please let me know!
+### Effects stack
+If multiple effect tags are active at once (e.g. <shake><wave>text</wave></shake>),
+all their effect functions run every update in no particular order.
 
-## Customisation
+### Colours and fonts override
+If multiple colour/font tags overlap, only the most recent (innermost) tag applies.
 
-You can add custom colours to lovetext through calling: 
+Example:
+
+`"<red> hello <blue> world </blue> </red>"` -> “hello” is red, “world” is blue.
+
+### Custom tags with the same name
+
+If you create a new effect named "shake" -> it replaces the default shake effect.
+
+If you create a colour named "shake" -> it changes colour but keeps the effect.
+
+# Configuration
+
+When initialising Lovetext, you can call the `setup()` function, which allows you to modify how Lovetext behaves.
 
 ```lua
-lovetext.newColourTag(tag, value)
+lovetext.setup({useCanvas = false})
 ```
 
-Where `tag` is the name that you will use to call the new colour (E.G. red) and `value` is a table containing the RGB colours of the new colour tag.
+## useCanvas
+`default = true`
 
-You can also use `lovetext.newColourTag()` to replace existing colour tags, such as if you want to modify the `default` colour.
+If enabled, Lovetext caches static text into a canvas.
 
-### Cleaning Up
+Text without active effects or animations only needs to be drawn once, improving performance, especially for long paragraphs.
 
-As Lovetext uses tables to hold information, if your project creates a lot of unique text objects, you may need to discard text objects that are no longer being used; but no worries at all, for Lovetext makes even this a breeze!
+When disabled, Lovetext re-renders every letter each frame.
 
-Simply call:
+> [!NOTE]
+> You may need to disable canvases if they render incorrectly.
+
+## drawBounds
+`default = false`
+
+If enabled, draws red boxes around each letter's bounds, useful for debugging letter positions and spacing.
+
+## defaultFont
+`default = nil`
+
+If set, new Lovetext objects use this font when none is provided; otherwise, they default to `love.graphics.getFont()`.
+
+# Customisation
+
+## What a letter looks like internally
+
+Each visible character becomes a **letter object** with the following fields:
+
+```lua
+letter = {
+    char    = "a",       -- Character
+    x       = 0,         -- x offset
+    y       = 0,         -- y offset
+    t       = 0,         -- Timer
+    font    = <Font>,    -- Active font for this letter
+    colour  = {r,g,b,a}, -- Active color for this letter
+    effects = {},        -- List of effect functions applied
+}
+```
+
+## Registering Custom Tags
+Besides the defaults, Lovetext also supports custom tags of various types:
+
+```lua
+lovetext.newColour(tag, rgba)   -- table
+lovetext.newFont(tag, font)     -- font object
+lovetext.newEffect(tag, effect) -- function
+lovetext.newMacro(tag, macro)   -- table
+```
+
+Custom effect functions receive:
+
+```lua
+function effect(letter, index)
+    -- modify letter.x, letter.y, letter.colour, etc
+end
+```
+
+Macros are custom tags that let you combine multiple existing tags (colors, fonts, or effects) into a single “super tag” for convenience.
+```lua
+lovetext.newMacro("warning", {
+    "yellow",
+    "shake"
+})
+```
+
+# Cleaning Up
+
+If your project creates many text objects, you should release ones you no longer need. This can be done through the following functions:
+
 ```lua
 text:release()
 ```
 This will release the called object from the list of instances.
 
-If you would instead like to release *ALL* lovetext objects, simply call:
 ```lua
 lovetext.clear()
 ```
-This simple line will clear all of the currently registered lovetext objects.
+This will clear all of the currently registered Lovetext objects.
