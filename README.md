@@ -24,10 +24,9 @@ end
 
 ### 1. [How To Use](#how-to-use)
 ### 2. [Updating Lovetext Objects](#updating-lovetext-objects)  
-### 3. [Using Tags](#using-tags)  
-### 4. [Configuration](#configuration)  
-### 5. [Customisation](#customisation)  
-### 6. [Cleaning Up](#cleaning-up)
+### 3. [Using Tags](#using-tags)   
+### 4. [Customisation](#customisation)  
+### 5. [Cleaning Up](#cleaning-up)
 
 # How To Use:
 
@@ -42,6 +41,7 @@ You can immediately begin creating text objects through the following:
 ```lua
 text = lovetext.new("your text", font, limit)
 ```
+> `limit` can produce mid-word line breaks (wrapping currently works on a per-letter basis).
 
 You can send additional text to an existing Lovetext object using the following function:
 
@@ -49,7 +49,8 @@ You can send additional text to an existing Lovetext object using the following 
 text:send("additional text") -- appends text
 text:send(-4) -- removes last 4 letters
 ```
-> `send()` automatically **re-parses tags** for the inserted text.
+> `send()` automatically **re-parses tags** for the object upon completion.
+
 
 Once your text objects are ready, you can render them through:
 
@@ -58,7 +59,6 @@ Once your text objects are ready, you can render them through:
 text:draw(x, y, chars)
 text:draw(20, 400, 5) -- renders the first 5 visible characters at {x20, y400}
 ```
-> This can produce mid-word line breaks (wrapping currently works on a per-letter basis).
 
 > Tags are still parsed, even if the content they apply to is partially drawn.
 
@@ -102,6 +102,10 @@ The default tags include:
 
 - Colours: `<default>` `<white>` `<black>` `<red>` `<orange>` `<yellow>` `<green>` `<blue>` `<purple>`
 
+> Unknown tags are ignored.
+
+> Tags are case sensitive.
+
 ## Tag Precedence & Stacking Rules
 
 ### Effects stack
@@ -121,36 +125,6 @@ If you create a new effect named "shake" -> it replaces the default shake effect
 
 If you create a colour named "shake" -> it changes colour but keeps the effect.
 
-# Configuration
-
-When initialising Lovetext, you can call the `setup()` function, which allows you to modify how Lovetext behaves.
-
-```lua
-lovetext.setup({useCanvas = false})
-```
-
-## useCanvas
-`default = true`
-
-If enabled, Lovetext caches static text into a canvas.
-
-Text without active effects or animations only needs to be drawn once, improving performance, especially for long paragraphs.
-
-When disabled, Lovetext re-renders every letter each frame.
-
-> [!NOTE]
-> You may need to disable canvases if they render incorrectly.
-
-## drawBounds
-`default = false`
-
-If enabled, draws red boxes around each letter's bounds, useful for debugging letter positions and spacing.
-
-## defaultFont
-`default = nil`
-
-If set, new Lovetext objects use this font when none is provided; otherwise, they default to `love.graphics.getFont()`.
-
 # Customisation
 
 ## What a letter looks like internally
@@ -163,11 +137,14 @@ letter = {
     x       = 0,         -- x offset
     y       = 0,         -- y offset
     t       = 0,         -- Timer
+    width   = n,         -- Character width
+    height  = n,         -- Font height
     font    = <Font>,    -- Active font for this letter
     colour  = {r,g,b,a}, -- Active color for this letter
     effects = {},        -- List of effect functions applied
 }
 ```
+> There are more fields, but these are the most important for making custom effects.
 
 ## Registering Custom Tags
 Besides the defaults, Lovetext also supports custom tags of various types:
@@ -194,6 +171,7 @@ lovetext.newMacro("warning", {
     "shake"
 })
 ```
+> Macro items are tag names — the engine will apply them if a matching effect, font or colour tag exists. Unknown names are ignored.
 
 # Cleaning Up
 

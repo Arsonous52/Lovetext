@@ -2,30 +2,35 @@ local lovetext = {}
 lovetext.__index = lovetext
 local instances = {}
 
-local lg_print = love.graphics.print
-local setColour = love.graphics.setColor
+local getFont = love.graphics.getFont
 local draw = love.graphics.draw
+local newText = love.graphics.newTextBatch or love.graphics.newText -- Use newTextBatch if on Love 12
 
--- options
-local useCanvas
-local drawBounds
-local defaultFont
+-- variables
+local SIN_COS_TABLE_SIZE = 60
+local sinTable = {}
+for i = 0, SIN_COS_TABLE_SIZE-1 do
+    sinTable[i] = math.sin(i / SIN_COS_TABLE_SIZE * 2*math.pi)
+end
 
-function lovetext.setup(opts)
-    opts = opts or {}
-    lovetext.clear()
-    useCanvas = opts.useCanvas ~= false
-    drawBounds = opts.drawBounds or false
-    defaultFont = opts.defaultFont
+local cosTable = {}
+for i = 0, SIN_COS_TABLE_SIZE-1 do
+    cosTable[i] = math.cos(i / SIN_COS_TABLE_SIZE * 2*math.pi)
 end
 
 local effects = {
     shake = function(letter, i)
-        letter.x = math.sin(letter.t * 10 + i)
-        letter.y = math.cos(letter.t * 10 + i)
+        local angle = letter.t * 10 + i
+        local frac = (angle / (2 * math.pi)) % 1
+        local id = math.floor(frac * SIN_COS_TABLE_SIZE)
+        letter.x = sinTable[id]
+        letter.y = cosTable[id]
     end,
     wave = function(letter, i)
-        letter.y = math.sin(letter.t*5 + i) * 2
+        local angle = letter.t * 5 + i
+        local frac = (angle / (2 * math.pi)) % 1
+        local id = math.floor(frac * SIN_COS_TABLE_SIZE)
+        letter.y = cosTable[id] * 2
     end,
 }
 
@@ -46,28 +51,21 @@ local colours = {
 local fonts = {}
 local macros = {}
 
-local waveSettings = {
-    speed = 5,
-    intensity = 2,
-}
-
-local shakeSettings = {
-    speed = 20,
-    intensity = 1,
-}
-
-local function find(tbl, val)
-    for i, v in pairs(tbl) do
-        if val == v then
+local function findFromTop(tbl, val)
+    if not tbl then return end
+    for i = #tbl, 1, -1 do
+        if tbl[i] == val then
             return i
         end
     end
 end
 
 local function update(self, dt)
-    for i, letter in ipairs(self.parsed) do
-        letter.t = letter.t + dt
-        for j, tag in pairs(letter.effects) do tag(letter, i) end
+    for i, letter in ipairs(self.letters) do
+        if #letter.effects > 0 then
+            letter.t = letter.t + dt
+            for _, tag in ipairs(letter.effects) do tag(letter, i) end
+        end
     end
 end
 
@@ -84,20 +82,30 @@ end
 
 -- Split every letter once the parsing process has been completed
 local function explodeSegments(segments)
+    local cx, cy = 0, 0
     local letters = {}
     for _, seg in ipairs(segments) do
-        for i = 1, #seg.text do
-            local char = seg.text:sub(i, i)
-            table.insert(letters, {
-                char = char,
-                effects = seg.effects,
-                font = seg.font,
-                colour = seg.colour,
+        if seg.text and seg.text ~= "" then
+            for i = 1, #seg.text do
+                local char = seg.text:sub(i, i)
+                local letter = {
+                    char = char,
+                    effects = {unpack(seg.effects)},
+                    font = seg.font,
+                    width = seg.font:getWidth(char),
+                    height = seg.font:getHeight(),
+                    base = seg.font:getBaseline(),
+                    colour = seg.colour,
 
-                t = 0,
-                x = 0,
-                y = 0,
-            })
+                    t = 0,
+                    baseX = 0,
+                    baseY = 0,
+                    x = 0,
+                    y = 0,
+                }
+                if char == "\n" then letter.width = 0 end
+                table.insert(letters, letter)
+            end
         end
     end
     return letters
@@ -106,7 +114,8 @@ end
 local function checkTag(stack, tag, closing)
     if tag then
         if closing == "/" then
-            table.remove(stack, find(stack, tag))
+            local id = findFromTop(stack, tag)
+            if id then table.remove(stack, id) end
         else -- open new tag
             table.insert(stack, tag)
         end
@@ -127,10 +136,10 @@ local function parseText(text, font)
         local begin, fin, closing, tag = text:find("<(/?)([^>]+)>", i)
         if begin then
 
-            local font = fontStack[#fontStack] or font
-            local colour = colourStack[#colourStack]
+            local currentFont = fontStack[#fontStack] or font
+            local currentColour = colourStack[#colourStack]
             local sub = text:sub(i, begin-1)
-            table.insert(segments, parseSegment(sub, {unpack(effectStack)}, font, colour))
+            if #sub > 0 then table.insert(segments, parseSegment(sub, {unpack(effectStack)}, currentFont, currentColour)) end
 
             effectStack = checkTag(effectStack, effects[tag], closing)
             fontStack = checkTag(fontStack, fonts[tag], closing)
@@ -145,8 +154,7 @@ local function parseText(text, font)
                 end
             end
 
-            text = text:sub(1, begin - 1) .. text:sub(fin + 1)
-            i = begin
+            i = fin + 1
 
         else -- no more tags
             sub = text:sub(i)
@@ -157,33 +165,26 @@ local function parseText(text, font)
     return explodeSegments(segments)
 end
 
-local function drawText(self, x, y, chars, mode)
-    local cursor = {x = x, y = y}
-    local base = self.font:getBaseline()
+local function getTextBatchForFont(self, font, mode)
+    local key = font
+    local batch = self[mode.."TextBatches"][key]
+    if not batch then
+        batch = newText(font)
+        self[mode.."TextBatches"][key] = batch
+    end
+    return batch
+end
 
-    for i, letter in ipairs(self.parsed) do
-        local w = letter.font:getWidth(letter.char)
-        local h = letter.font:getHeight()
-        local offset = base - letter.font:getBaseline()
-
-        if letter.char == "\n" or cursor.x + w > self.limit + x then
-            cursor.x = x
-            cursor.y = cursor.y + self.font:getHeight()
+local function computeLetterLayout(self)
+    local cx, cy = 0, 0
+    for i, letter in ipairs(self.letters) do
+        letter.baseX, letter.baseY = cx, cy
+        if letter.char == "\n" or cx + letter.width > self.limit then
+            cx = 0
+            cy = cy + self.lineHeight
+        else
+            cx = cx + letter.width
         end
-
-        -- Draw the letter
-        if letter.colour then setColour(letter.colour) end
-        if (#letter.effects == 0 and mode ~= 'dynamic') or (#letter.effects > 0 and mode ~= 'static') then
-            lg_print(letter.char, letter.font, cursor.x + letter.x, cursor.y + letter.y + offset)
-        end
-        
-        if drawBounds then
-            setColour(1, 0, 0)
-            love.graphics.rectangle("line", cursor.x + letter.x, cursor.y + letter.y + offset, w, h)
-        end
-
-        setColour(colours.default)
-        cursor.x = cursor.x + w
     end
 end
 
@@ -206,6 +207,7 @@ function lovetext.newColour(tag, value)
 end
 
 -- Register a macro that can combine color, font, and effects
+--Can also be used to modify existing macro tags.
 function lovetext.newMacro(tag, opts)
     macros[tag] = opts
 end
@@ -213,12 +215,16 @@ end
 --Creates a new text object to be used with lovetext.
 function lovetext.new(text, font, limit)
     local obj = setmetatable({}, lovetext)
-    obj.canvas = useCanvas and love.graphics.newCanvas() or nil
-    obj.font = font or defaultFont or love.graphics.getFont()
-    obj.parsed = parseText(text, obj.font)
+    obj.font = font or getFont()
+    obj.lineHeight = obj.font:getHeight()
+    obj.letters = parseText(text, obj.font)
     obj.raw = text
     obj.limit = limit or math.huge
+    obj.staticTextBatches = {}
+    obj.dynamicTextBatches = {}
     obj.update = update
+    obj.dirty = true
+    computeLetterLayout(obj)
 
     table.insert(instances, obj)
     return obj
@@ -231,7 +237,9 @@ function lovetext:send(text)
     else
         self.raw = self.raw .. text
     end
-    self.parsed = parseText(self.raw, self.font)
+    self.letters = parseText(self.raw, self.font)
+    self.dirty = true
+    computeLetterLayout(self)
 end
 
 --Update all instances of lovetext simultaneously.
@@ -242,25 +250,38 @@ function lovetext.update(dt)
     end
 end
 
+local function drawText(self, chars, mode)
+    local base = self.font:getBaseline()
+
+    for i, letter in ipairs(self.letters) do
+        if i > chars then return end
+        if (#letter.effects > 0 and mode == 'dynamic') or (#letter.effects == 0 and mode == 'static') then
+            local offset = base - letter.base
+            local batch = getTextBatchForFont(self, letter.font, mode)
+            batch:add({letter.colour, letter.char}, letter.baseX + letter.x, letter.baseY + letter.y + offset)
+        end
+    end
+end
+
 --Draw a lovetext object.
 function lovetext:draw(x, y, chars)
     x,y = x or 0, y or 0
-    chars = math.floor(chars or #self.parsed)
-    local cursor = {x = x, y = y}
+    chars = math.floor(chars or #self.letters)
 
-    local mode = "both"
-    if useCanvas then
-        mode = "dynamic"
-        if self.renderedChars ~= chars then
-            self.canvas:renderTo(function()
-                love.graphics.clear()
-                drawText(self, x, y, chars, "static")
-            end)
-        end
-        draw(self.canvas)
+    if self.renderedChars ~= chars then self.dirty = true end
+
+    if self.dirty then  
+        for _, batch in pairs(self.staticTextBatches) do batch:clear() end
+        drawText(self, chars, "static")
+        self.dirty = false
+        self.renderedChars = chars
     end
-    drawText(self, x, y, chars, mode)
-    self.renderedChars = chars
+    for _, batch in pairs(self.dynamicTextBatches) do batch:clear() end
+    drawText(self, chars, "dynamic")
+
+    -- draw all batches
+    for _, batch in pairs(self.staticTextBatches) do draw(batch, x, y) end
+    for _, batch in pairs(self.dynamicTextBatches) do draw(batch, x, y) end
 end
 
 --Release a lovetext instance from the instance list.
@@ -268,6 +289,12 @@ function lovetext:release()
     for i, inst in ipairs(instances) do
         if inst == self then
             table.remove(instances, i)
+            for i, batch in ipairs(self.staticTextBatches) do
+                batch:release()
+            end
+            for i, batch in ipairs(self.dynamicTextBatches) do
+                batch:release()
+            end
             break
         end
     end
@@ -275,8 +302,13 @@ end
 
 --Release all lovetext instances.
 function lovetext.clear()
-    instances = {}
+    local toRemove = {}
+    for inst in pairs(instances) do
+        table.insert(toRemove, inst)
+    end
+    for _, inst in ipairs(toRemove) do
+        inst:release()
+    end
 end
 
-lovetext.setup()
 return lovetext
